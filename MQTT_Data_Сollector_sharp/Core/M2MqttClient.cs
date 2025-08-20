@@ -2,6 +2,7 @@
 using MQTT_Data_Сollector_sharp.Core.Entities;
 using MQTT_Data_Сollector_sharp.Core.Interfaces;
 using MQTT_Data_Сollector_sharp.Core.Models;
+using MQTT_Data_Сollector_sharp.Workers;
 using System.Collections.Concurrent;
 using System.Text;
 using uPLibrary.Networking.M2Mqtt;
@@ -19,17 +20,19 @@ namespace MQTT_Data_Сollector_sharp.Core
 		private string _username;
 		private string _password;
 
-		private readonly ILogger _logger;
+		//private readonly ILogger<M2MqttClient> _logger;
+		private readonly LoggerManager loggerM2MqttClient;
 
 		private MqttClient _mqttClient;
 		private readonly HashSet<string> _subscriptions = new();
 
-		public M2MqttClient(string brokerAddress, int port, string username, string password, ILogger logger)
+		public M2MqttClient(string brokerAddress, int port, string username, string password, ILogger<M2MqttClient> logger)
 		{
 			_clientId = Guid.NewGuid().ToString();
 			_username = username;
 			_password = password;
-			_logger = logger;
+			//_logger = logger;
+			loggerM2MqttClient = new LoggerManager(logger, "M2MqttClient");
 
 			// Создание клиента MQTT
 			_mqttClient = new MqttClient(brokerAddress, port, false, null, null, MqttSslProtocols.None);
@@ -48,13 +51,13 @@ namespace MQTT_Data_Сollector_sharp.Core
 
 				try
 				{
-					_logger.LogInformation("Connecting to MQTT broker...");
+					loggerM2MqttClient.LogInformation("Connecting to MQTT broker...");
 					_mqttClient.Connect(_clientId, _username, _password);
-					_logger.LogInformation("Connected to MQTT broker.");
+					loggerM2MqttClient.LogInformation("Connected to MQTT broker.");
 				}
 				catch (Exception ex)
 				{
-					_logger.LogError($"Connection failed: {ex.Message}");
+					loggerM2MqttClient.LogError($"Connection failed: {ex.Message}");
 				}
 			}
 
@@ -65,10 +68,10 @@ namespace MQTT_Data_Сollector_sharp.Core
 		{
 			if (_mqttClient.IsConnected)
 			{
-				_logger.LogInformation("Disconnecting from MQTT broker...");
+				loggerM2MqttClient.LogInformation("Disconnecting from MQTT broker...");
 				disconnectMode = true;
 				_mqttClient.Disconnect();
-				_logger.LogInformation("Disconnected from MQTT broker.");
+				loggerM2MqttClient.LogInformation("Disconnected from MQTT broker.");
 			}
 
 			return Task.CompletedTask;
@@ -80,13 +83,13 @@ namespace MQTT_Data_Сollector_sharp.Core
 			{
 				try
 				{
-					_logger.LogInformation("Reconnecting to MQTT broker...");
+					loggerM2MqttClient.LogInformation("Reconnecting to MQTT broker...");
 					_mqttClient.Connect(_clientId);
-					_logger.LogInformation("Reconnected to MQTT broker.");
+					loggerM2MqttClient.LogInformation("Reconnected to MQTT broker.");
 				}
 				catch (Exception ex)
 				{
-					_logger.LogError($"Reconnection failed: {ex.Message}");
+					loggerM2MqttClient.LogError($"Reconnection failed: {ex.Message}");
 					Task.Delay(5000);
 				}
 			}
@@ -101,14 +104,14 @@ namespace MQTT_Data_Сollector_sharp.Core
 
 			if (_mqttClient.IsConnected)
 			{
-				_logger.LogInformation($"Subscribing to topic: {topic}");
+				loggerM2MqttClient.LogInformation($"Subscribing to topic: {topic}");
 				_mqttClient.Subscribe(new string[] { topic }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
 				_subscriptions.Add(topic);
-				_logger.LogInformation($"Subscribed to topic: {topic}");
+				loggerM2MqttClient.LogInformation($"Subscribed to topic: {topic}");
 			}
 			else
 			{
-				_logger.LogError("Client is not connected. Cannot subscribe.");
+				loggerM2MqttClient.LogError("Client is not connected. Cannot subscribe.");
 				Reconnect();
 			}
 
@@ -127,15 +130,15 @@ namespace MQTT_Data_Сollector_sharp.Core
 				{
 					qosLevels[i] = MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE;
 					_subscriptions.Add(topics[i]);
-					_logger.LogInformation($"Subscribing to topic: {topics[i]}");
+					loggerM2MqttClient.LogInformation($"Subscribing to topic: {topics[i]}");
 				}
 
 				_mqttClient.Subscribe(topics, qosLevels);
-				_logger.LogInformation("Subscribed to all topics.");
+				loggerM2MqttClient.LogInformation("Subscribed to all topics.");
 			}
 			else
 			{
-				_logger.LogError("Client is not connected. Cannot subscribe.");
+				loggerM2MqttClient.LogError("Client is not connected. Cannot subscribe.");
 				Reconnect();
 			}
 
@@ -149,14 +152,14 @@ namespace MQTT_Data_Сollector_sharp.Core
 
 			if (_mqttClient.IsConnected)
 			{
-				_logger.LogInformation($"Unsubscribing from topic: {topic}");
+				loggerM2MqttClient.LogInformation($"Unsubscribing from topic: {topic}");
 				_subscriptions.Remove(topic);
 				_mqttClient.Unsubscribe(new string[] { topic });
-				_logger.LogInformation($"Unsubscribed from topic: {topic}");
+				loggerM2MqttClient.LogInformation($"Unsubscribed from topic: {topic}");
 			}
 			else
 			{
-				_logger.LogError("Client is not connected. Cannot unsubscribe.");
+				loggerM2MqttClient.LogError("Client is not connected. Cannot unsubscribe.");
 				Reconnect();
 			}
 
@@ -170,19 +173,19 @@ namespace MQTT_Data_Сollector_sharp.Core
 
 			if (_mqttClient.IsConnected)
 			{
-				_logger.LogInformation("Unsubscribing from topics:");
+				loggerM2MqttClient.LogInformation("Unsubscribing from topics:");
 				foreach (var topic in topics)
 				{
-					_logger.LogInformation($"- {topic}");
+					loggerM2MqttClient.LogInformation($"- {topic}");
 					_subscriptions.Remove(topic);
 				}
 
 				_mqttClient.Unsubscribe(topics);
-				_logger.LogInformation("Unsubscribed from all specified topics.");
+				loggerM2MqttClient.LogInformation("Unsubscribed from all specified topics.");
 			}
 			else
 			{
-				_logger.LogError("Client is not connected. Cannot unsubscribe.");
+				loggerM2MqttClient.LogError("Client is not connected. Cannot unsubscribe.");
 				Reconnect();
 			}
 
@@ -196,13 +199,13 @@ namespace MQTT_Data_Сollector_sharp.Core
 
 			if (_mqttClient.IsConnected)
 			{
-				_subscriptions.ToList().ForEach(s => _logger.LogInformation($", {s}"));
+				_subscriptions.ToList().ForEach(s => loggerM2MqttClient.LogInformation($", {s}"));
 				_mqttClient.Unsubscribe(_subscriptions.ToArray<string>());
 				_subscriptions.Clear();
 			}
 			else
 			{
-				_logger.LogError("Client is not connected. Cannot unsubscribe.");
+				loggerM2MqttClient.LogError("Client is not connected. Cannot unsubscribe.");
 				Reconnect();
 			}
 				
@@ -218,11 +221,11 @@ namespace MQTT_Data_Сollector_sharp.Core
 			if (_mqttClient.IsConnected)
 			{
 				_mqttClient.Publish(topic, Encoding.UTF8.GetBytes(payload), MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE, false);
-				_logger.LogInformation($"Message published to topic: {topic}");
+				loggerM2MqttClient.LogInformation($"Message published to topic: {topic}");
 			}
 			else
 			{
-				_logger.LogError("Client is not connected. Cannot publish.");
+				loggerM2MqttClient.LogError("Client is not connected. Cannot publish.");
 				Reconnect();
 			}
 
@@ -238,7 +241,7 @@ namespace MQTT_Data_Сollector_sharp.Core
 		private void OnMqttMsgPublishReceived(object sender, MqttMsgPublishEventArgs e)
 		{
 			var payload = Encoding.UTF8.GetString(e.Message);
-			_logger.LogInformation($"Received message: {payload} from topic: {e.Topic}");
+			loggerM2MqttClient.LogInformation($"Received message: {payload} from topic: {e.Topic}");
 
 			// Вызов события для обработки сообщения
 			MessageReceived?.Invoke(this, new MqttMessageReceivedEventArgs
@@ -251,7 +254,7 @@ namespace MQTT_Data_Сollector_sharp.Core
 		// Обработчик события закрытия соединения
 		private void OnConnectionClosed(object sender, EventArgs e)
 		{
-			_logger.LogInformation("Disconnected from MQTT broker.");
+			loggerM2MqttClient.LogInformation("Disconnected from MQTT broker.");
 			if (!_mqttClient.IsConnected)
 			{
 				Reconnect();

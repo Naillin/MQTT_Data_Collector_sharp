@@ -9,21 +9,23 @@ namespace MQTT_Data_Сollector_sharp.Workers
 	{
 		private readonly IMqttClient _mqttClient;
 		private readonly IDataRepository _dataRepository;
-		private readonly ILogger _logger;
+		//private readonly ILogger<MqttSubscriberWorker> _logger;
+		private readonly LoggerManager loggerMqttSubscriberWorker;
 
 		private CancellationTokenSource? _cts;
 		private Task? _runningTask;
 
-		public MqttSubscriberWorker(IMqttClient mqttClient, IDataRepository dataRepository, ILogger logger)
+		public MqttSubscriberWorker(IMqttClient mqttClient, IDataRepository dataRepository, ILogger<MqttSubscriberWorker> logger)
 		{
 			_mqttClient = mqttClient;
 			_dataRepository = dataRepository;
-			_logger = logger;
+			//_logger = logger;
+			loggerMqttSubscriberWorker = new LoggerManager(logger, "MqttSubscriberWorker");
 		}
 
 		public Task StartAsync()
 		{
-			_logger.LogInformation("Running worker.");
+			loggerMqttSubscriberWorker.LogInformation("Running worker.");
 			_cts = new CancellationTokenSource();
 			_runningTask = RunAsync(_cts.Token);
 
@@ -32,7 +34,7 @@ namespace MQTT_Data_Сollector_sharp.Workers
 
 		public async Task StopAsync()
 		{
-			_logger.LogInformation("Stoping worker.");
+			loggerMqttSubscriberWorker.LogInformation("Stoping worker.");
 			_cts?.Cancel();
 			if (_runningTask != null)
 				await _runningTask;
@@ -57,7 +59,7 @@ namespace MQTT_Data_Сollector_sharp.Workers
 					{
 						foreach (var path in validPaths)
 						{
-							_logger.LogInformation($"Subscribing to: {path}");
+							loggerMqttSubscriberWorker.LogInformation($"Subscribing to: {path}");
 						}
 
 						await _mqttClient.SubscribeAsync(validPaths);
@@ -68,7 +70,7 @@ namespace MQTT_Data_Сollector_sharp.Workers
 				catch (TaskCanceledException) { /* Выход по Cancel */ }
 				catch (Exception ex)
 				{
-					_logger.LogError(ex, "Subscriber error");
+					loggerMqttSubscriberWorker.LogError(ex, "Subscriber error");
 					await Task.Delay(1000, token); // Пауза после ошибки
 				}
 			}

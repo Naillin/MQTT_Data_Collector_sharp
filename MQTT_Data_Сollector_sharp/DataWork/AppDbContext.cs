@@ -14,8 +14,7 @@ namespace MQTT_Data_Сollector_sharp.DataWork
 
 		protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 		{
-			optionsBuilder.UseSqlite("Data Source=mqtt_data.db")
-						 .LogTo(message => Debug.WriteLine(message), LogLevel.Information);
+			optionsBuilder.UseSqlite("Data Source=mqtt_data.db").LogTo(message => Debug.WriteLine(message), LogLevel.Information);
 		}
 
 		protected override void OnModelCreating(ModelBuilder modelBuilder)

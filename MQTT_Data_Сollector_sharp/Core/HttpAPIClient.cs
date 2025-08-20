@@ -18,14 +18,16 @@ namespace MQTT_Data_Сollector_sharp.Core
 		private readonly string _baseUrl;
 		private readonly string _login;
 		private readonly string _password;
-		private readonly ILogger _logger;
+		//private readonly ILogger<HttpAPIClient> _logger;
+		private readonly LoggerManager loggerHttpAPIClient;
 
 		public HttpAPIClient(string url, string login, string password, ILogger logger)
 		{
 			_baseUrl = url;
 			_login = login;
 			_password = password;
-			_logger = logger;
+			//_logger = logger;
+			loggerHttpAPIClient = new LoggerManager(logger, "HttpAPIClient");
 
 			_httpClient = new HttpClient(_handler);
 		}
