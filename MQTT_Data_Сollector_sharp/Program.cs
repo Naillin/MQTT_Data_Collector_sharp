@@ -82,51 +82,58 @@ namespace MQTT_Data_Сollector_sharp
 
 		static async Task Main(string[] args)
 		{
-			var loggerFactory = LoggerFactory.Create(builder =>
+			InitConfig();
+
+			var serviceCollection = new ServiceCollection();
+
+			// Logger
+			serviceCollection.AddLogging(builder =>
 			{
 				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-					builder.AddConsole(); // Логирование в консоль на Windows
+					builder.AddConsole();
 				else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-					builder.AddSystemdConsole(); // Используем systemd journal
+					builder.AddSystemdConsole();
 			});
 
-			ILogger innerLoggerProgram = loggerFactory.CreateLogger<Program>();
-			LoggerManager loggerProgram = new LoggerManager(innerLoggerProgram, "Program");
+			// EF
+			serviceCollection.AddDbContextFactory<AppDbContext>();
 
-			InitConfig();
+			// HTTP API
+			serviceCollection.AddScoped<IHttpAPIClient>(sp => new HttpAPIClient(API_URL, API_LOGIN, API_PASSWORD, sp.GetRequiredService<ILogger<HttpAPIClient>>()));
+
+			// IDataRepository выбор через CONNECTION_METHOD
+			serviceCollection.AddScoped<IDataRepository>(sp =>
+				CONNECTION_METHOD switch
+				{
+					0 => new DataRepository(sp.GetRequiredService<IDbContextFactory<AppDbContext>>()),
+					1 => new APIRepository(sp.GetRequiredService<IHttpAPIClient>()),
+					_ => throw new NotImplementedException()
+				});
+
+			// Сервисы
+			serviceCollection.AddScoped<IMqttClient>(sp => new M2MqttClient(MQTT_ADDRESS, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD, sp.GetRequiredService<ILogger<M2MqttClient>>()));
+			serviceCollection.AddScoped<MqttService>();
+			serviceCollection.AddScoped<MqttSubscriberWorker>();
+
+			var serviceProvider = serviceCollection.BuildServiceProvider();
+
+			// Получаем зависимости через DI
+			var loggerProgram = new LoggerManager(serviceProvider.GetRequiredService<ILogger<Program>>(), "Program");
 			loggerProgram.LogInformation(configTextDefault);
 			await Task.Delay(3000);
 
-			//Base
-			var serviceCollection = new ServiceCollection();
-			serviceCollection.AddDbContextFactory<AppDbContext>();
-			serviceCollection.AddScoped<IDataRepository, DataRepository>();
-			ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
+			var mqttClient = serviceProvider.GetRequiredService<IMqttClient>();
+			var mqttService = serviceProvider.GetRequiredService<MqttService>();
+			var mqttSubscriberWorker = serviceProvider.GetRequiredService<MqttSubscriberWorker>();
 
-			IDbContextFactory<AppDbContext> dbContextFactory = serviceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
-
-			//Connections
-			IMqttClient mqttClient = new M2MqttClient(MQTT_ADDRESS, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD, loggerFactory.CreateLogger<M2MqttClient>());
-			IHttpAPIClient httpAPIClient = new HttpAPIClient(API_URL, API_LOGIN, API_PASSWORD, loggerFactory.CreateLogger<HttpAPIClient>());
-
-			//Servises
-			IDataRepository dataRepository = CONNECTION_METHOD switch
-			{
-				0 => new DataRepository(dbContextFactory),
-				1 => new APIRepository(httpAPIClient),
-				_ => throw new NotImplementedException()
-			};
-			MqttService mqttService = new MqttService(dataRepository, loggerFactory.CreateLogger<MqttService>());
-			MqttSubscriberWorker mqttSubscriberWorker = new MqttSubscriberWorker(mqttClient, dataRepository, loggerFactory.CreateLogger<MqttSubscriberWorker>());
-
-			//Run
+			// Подписка на события
 			mqttClient.MessageReceived += async (senderMQTT, eMQTT) =>
 			{
 				try
 				{
 					loggerProgram.LogInformation($"Get data - Topic: [{eMQTT.Topic}] Message: [{eMQTT.Payload}]");
 
-					if (eMQTT != null && !string.IsNullOrEmpty(eMQTT.Topic) && !string.IsNullOrEmpty(eMQTT.Payload))
+					if (!string.IsNullOrEmpty(eMQTT.Topic) && !string.IsNullOrEmpty(eMQTT.Payload))
 					{
 						await mqttService.SaveDataAsync(eMQTT.Topic, eMQTT.Payload);
 					}
@@ -136,6 +143,7 @@ namespace MQTT_Data_Сollector_sharp
 					loggerProgram.LogError(ex, "Error in MQTT message receive!");
 				}
 			};
+
 			await mqttSubscriberWorker.StartAsync();
 		}
 	}
